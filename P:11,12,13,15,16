@@ -1,0 +1,253 @@
+//Built.sbt code
+ThisBuild / version := "0.1.0-SNAPSHOT"
+
+ThisBuild / scalaVersion := "3.3.8"
+
+lazy val root = (project in file("."))
+  .settings(
+    name := "CsvStatsProject",
+    libraryDependencies ++= Seq(
+      ("com.github.tototoshi" %% "scala-csv" % "2.0.0")
+        .cross(CrossVersion.for3Use2_13),
+      ("org.scalanlp" %% "breeze" % "2.1.0")
+        .cross(CrossVersion.for3Use2_13),
+      ("org.scalanlp" %% "breeze-viz" % "2.1.0")
+        .cross(CrossVersion.for3Use2_13)
+    )
+  )
+
+//11. Write a program to tokenize and count the frequency of words in a text file.
+import scala.io.Source
+
+object Pract_11_Trisha_S086 {
+  def main(args: Array[String]): Unit = {
+    val filename = "Trisha.txt"
+
+    // Read the file
+    val lines = Source.fromFile(filename).getLines().toList
+
+    // Tokenize and normalize words
+    val words = lines
+      .flatMap(_.toLowerCase.split("\\W+")) // split on non-word characters
+      .filter(_.nonEmpty)                   // remove empty tokens
+
+    // Count word frequencies
+    val wordCounts = words.groupBy(identity).view.mapValues(_.size).toMap
+
+    // Print the word frequencies
+    println("Word Frequencies:")
+    wordCounts.toSeq.sortBy(-_._2).foreach { case (word, count) =>
+      println(f"$word%-15s -> $count")
+    }
+  }
+}
+
+//12. Implement one-hot encoding for a categorical column in a dataset.
+import com.github.tototoshi.csv._
+import java.io.File
+
+object Pract_12_Trisha_S086 {
+  def main(args: Array[String]): Unit = {
+
+    val reader = CSVReader.open(new File("products.csv"))
+    val data = reader.allWithHeaders()
+    reader.close()
+
+    // Get unique categories
+    val categories = data.map(_("Category")).distinct.sorted
+
+    val newData = data.map { row =>
+      val category = row("Category")
+      val oneHot = categories.map(cat => cat -> (if (cat == category) "1" else "0")).toMap
+      (row - "Category") ++ oneHot
+    }
+
+    // Print the header
+    val headers = newData.head.keys.toList
+    println(headers.mkString(", "))
+
+    // Print each one-hot encoded row
+    newData.foreach { row =>
+      println(headers.map(row).mkString(", "))
+    }
+
+    // Write output to new CSV file
+    val writer = CSVWriter.open(new File("products_encoded.csv"))
+    writer.writeRow(headers)
+    newData.foreach(row => writer.writeRow(headers.map(row)))
+    writer.close()
+
+    println("One-hot encoded file written to products_encoded.csv")
+  }
+}
+
+//13. Create a scatter plot of random data using Breeze-viz. Label the axes and customize the color of points.
+import breeze.linalg.DenseVector
+import breeze.plot.{Figure, plot}
+import com.github.tototoshi.csv.*
+
+import java.io.File
+
+object Pract_13_Trisha_S086 {
+  def main(args: Array[String]): Unit = {
+
+    val reader = CSVReader.open(new File("penguins.csv"))
+    val data = reader.allWithHeaders()
+    reader.close()
+
+    // Extract bill_length_mm and bill_depth_mm for each species
+    val adelie = data.filter(_("species") == "Adelie")
+    val gentoo = data.filter(_("species") == "Gentoo")
+    val chinstrap = data.filter(_("species") == "Chinstrap")
+
+    def extractXY(rows: List[Map[String, String]]) = {
+      val x = DenseVector(rows.map(_("bill_length_mm").toDouble).toArray)
+      val y = {
+        DenseVector(rows.map(_("bill_depth_mm").toDouble).toArray)
+      }
+      (x, y)
+    }
+
+    val (xAdelie, yAdelie) = extractXY(adelie)
+    val (xGentoo, yGentoo) = extractXY(gentoo)
+    val (xChinstrap, yChinstrap) = extractXY(chinstrap)
+
+    // Create plot
+    val fig = Figure()
+    val plt = fig.subplot(0)
+    plt.title = "Bill Length vs Bill Depth"
+    plt.xlabel = "Bill Length (mm)"
+    plt.ylabel = "Bill Depth (mm)"
+
+    plt += plot(xAdelie, yAdelie, '.', name = "Adelie", colorcode = "blue")
+    plt += plot(xGentoo, yGentoo, '.', name = "Gentoo", colorcode = "green")
+    plt += plot(xChinstrap, yChinstrap, '.', name = "Chinstrap", colorcode = "red")
+
+    fig.refresh()
+    fig.saveas("scatter_plot.png") // saves a copy as an image too
+  }
+}
+
+//14. Generate a histogram of a dataset using Breeze-viz. Experiment with different bin sizes.
+import breeze.linalg._
+import breeze.plot._
+import com.github.tototoshi.csv._
+import java.io.File
+
+object Pract_14_Trisha_S086 {
+  def main(args: Array[String]): Unit = {
+
+    // Read CSV
+    val reader = CSVReader.open(new File("penguins.csv"))
+    val data = reader.allWithHeaders()
+    reader.close()
+
+    // Extract bill_length_mm as a vector of doubles
+    val billLengths = DenseVector(
+      data
+        .map(_("bill_length_mm"))
+        .filter(_.nonEmpty)
+        .map(_.toDouble)
+        .toArray
+    )
+
+    println(s"Loaded ${billLengths.length} records")
+    println(s"Min: ${min(billLengths)}, Max: ${max(billLengths)}")
+
+    // Create figure and subplots with different bin sizes
+    val fig = Figure("Histogram of Bill Length")
+    fig.width = 1200
+    fig.height = 500
+
+    val binSizes = List(5, 10, 20)
+    for ((bins, idx) <- binSizes.zipWithIndex) {
+      val plt = fig.subplot(1, binSizes.length, idx)
+      plt += hist(billLengths, bins)
+      plt.title = s"Histogram with $bins bins"
+      plt.xlabel = "Bill Length (mm)"
+      plt.ylabel = "Frequency"
+    }
+
+    fig.refresh()
+    fig.saveas("bill_length_histogram.png")
+    println("Saved plot as bill_length_histogram.png")
+  }
+}
+
+//15. Plot a line graph for a dataset showing a trend over time.
+import breeze.linalg._
+import breeze.plot._
+import com.github.tototoshi.csv._
+import java.io.File
+
+object Pract_15_Trisha_S086 {
+  def main(args: Array[String]): Unit = {
+
+    val reader = CSVReader.open(new File("penguins.csv"))
+    val data = reader.allWithHeaders()
+    reader.close()
+
+    // Treat row order as "time" (e.g., Day 1, Day 2, ... Day N)
+    // and body_mass_g as the value trending over that time
+    val bodyMass = data
+      .map(_("body_mass_g"))
+      .filter(_.nonEmpty)
+      .map(_.toDouble)
+
+    println(s"Loaded ${bodyMass.length} records")
+
+    // X = time index (Day 1, Day 2, ...), Y = body mass
+    val x = DenseVector((1 to bodyMass.length).map(_.toDouble).toArray)
+    val y = DenseVector(bodyMass.toArray)
+
+    val fig = Figure("Penguin Body Mass Trend")
+    val plt = fig.subplot(0)
+    plt += plot(x, y, name = "Body Mass (g)", colorcode = "blue")
+    plt.xlabel = "Time (Record Sequence / Day)"
+    plt.ylabel = "Body Mass (g)"
+    plt.title = "Penguin Body Mass Over Time (by Record Order)"
+
+    fig.refresh()
+    fig.saveas("body_mass_trend.png")
+    println("Saved plot as body_mass_trend.png")
+  }
+}
+
+//16. Combine two plots (e.g., scatter and line plot) in a single visualization using Breeze-viz.
+import breeze.linalg._
+import breeze.plot._
+import com.github.tototoshi.csv._
+import java.io.File
+
+object Pract_15_Trisha_S086 {
+  def main(args: Array[String]): Unit = {
+
+    val reader = CSVReader.open(new File("penguins.csv"))
+    val data = reader.allWithHeaders()
+    reader.close()
+
+    // Treat row order as "time" (e.g., Day 1, Day 2, ... Day N)
+    // and body_mass_g as the value trending over that time
+    val bodyMass = data
+      .map(_("body_mass_g"))
+      .filter(_.nonEmpty)
+      .map(_.toDouble)
+
+    println(s"Loaded ${bodyMass.length} records")
+
+    // X = time index (Day 1, Day 2, ...), Y = body mass
+    val x = DenseVector((1 to bodyMass.length).map(_.toDouble).toArray)
+    val y = DenseVector(bodyMass.toArray)
+
+    val fig = Figure("Penguin Body Mass Trend")
+    val plt = fig.subplot(0)
+    plt += plot(x, y, name = "Body Mass (g)", colorcode = "blue")
+    plt.xlabel = "Time (Record Sequence / Day)"
+    plt.ylabel = "Body Mass (g)"
+    plt.title = "Penguin Body Mass Over Time (by Record Order)"
+
+    fig.refresh()
+    fig.saveas("body_mass_trend.png")
+    println("Saved plot as body_mass_trend.png")
+  }
+}
