@@ -1,0 +1,251 @@
+//1. Find the Pearson correlation between two lists of numbers. Implement the formula for Pearson correlation coefficient.
+import scala.io.Source
+
+object Pract_1_Trisha_S086 {
+
+  def main(args: Array[String]): Unit = {
+
+    // Import dataset from resources folder
+    val stream = getClass.getResourceAsStream("/rice_production_large.csv")
+
+    if (stream == null) {
+      println("Error: File not found in resources folder!")
+      return
+    }
+
+    val file = Source.fromInputStream(stream)
+    println("Dataset loaded successfully!")
+
+    // Reading CSV data
+    // Column index 4 = Rainfall
+    // Column index 5 = Production
+    val data = file.getLines()
+      .drop(1) // Skip header row
+      .flatMap { line =>
+        val cols = line.split(",")
+        if (cols.length > 5) {
+          for {
+            x <- cols(4).trim.toDoubleOption
+            y <- cols(5).trim.toDoubleOption
+          } yield (x, y)
+        } else {
+          None
+        }
+      }.toList
+
+    file.close()
+
+    // Separate X and Y values
+    val (x, y) = data.unzip
+    val n = x.length.toDouble
+
+    // Check empty data
+    if (n == 0) {
+      println("No valid numerical data found!")
+      return
+    }
+
+    println("Variable X : Rainfall (mm)")
+    println("Variable Y : Rice Production (tons)")
+
+    // Calculate mean
+    val meanX = x.sum / n
+    val meanY = y.sum / n
+
+    // Pearson Correlation Formula
+    val numerator =
+      x.zip(y)
+        .map { case (xi, yi) =>
+          (xi - meanX) * (yi - meanY)
+        }
+        .sum
+
+    val denominator =
+      math.sqrt(
+        x.map(xi => math.pow(xi - meanX, 2)).sum *
+          y.map(yi => math.pow(yi - meanY, 2)).sum
+      )
+
+    val r =
+      if (denominator == 0)
+        0.0
+      else
+        numerator / denominator
+
+    // Correlation interpretation
+    val relation =
+      if (r >= 0.7)
+        "Strong Positive Relationship"
+      else if (r >= 0.3)
+        "Moderate Positive Relationship"
+      else if (r > 0)
+        "Weak Positive Relationship"
+      else if (r <= -0.7)
+        "Strong Negative Relationship"
+      else if (r < 0)
+        "Negative Relationship"
+      else
+        "No Relationship"
+
+    // Student's t-test
+    val df = n - 2
+
+    val tStat =
+      r * math.sqrt(df / (1.0 - math.pow(r, 2)))
+
+    // Critical value for 5% significance level
+    val criticalValue = 1.96
+
+    val isSignificant =
+      math.abs(tStat) > criticalValue
+
+    // Output Result
+    println("-----------------------------------")
+    println(" Pearson Correlation Analysis ")
+    println("-----------------------------------")
+    println(f"Dataset Size : ${n.toInt}%d records")
+    println(f"Pearson Correlation (r) : $r%.4f")
+    println(s"Relationship : $relation")
+    println(f"t-Statistic : $tStat%.4f")
+    println("-----------------------------------")
+    println("Hypothesis Testing")
+    println("H0 : There is no significant correlation.")
+    println("H1 : There is a significant correlation.")
+
+    if (isSignificant) {
+      println("Result : Significant at 5% significance level")
+      println("Reject H0")
+    } else {
+      println("Result : Not Significant at 5% significance level")
+      println("Fail to Reject H0")
+    }
+
+    println("-----------------------------------")
+  }
+}
+
+
+
+//code2:2. Calculate the moving average of a time series data using Scala collections.Use dataset ,Perform required Feature Engg.
+//find :simple moving average (SMA), weighted moving average (WMA), and exponential moving average (EMA).,Use data Visualization,Write inference / explain your result.,ustify which type of MA is best for your Dataset
+
+import breeze.linalg._
+import breeze.plot._
+import com.github.tototoshi.csv._
+import java.io.File
+
+object Pract_2_M2_Trisha_S086 {
+
+  def main(args: Array[String]): Unit = {
+
+    // Step 1: Load dataset
+    val reader = CSVReader.open(new File("airline_passengers.csv"))
+    val data = reader.allWithHeaders()
+    reader.close()
+
+    // Feature Engineering: extract "Pax" (total passengers), strip commas
+    val passengers: List[Double] = data.map { row =>
+      row("Pax").replace(",", "").trim.toDouble
+    }
+    val n = passengers.length
+
+    println(s"Loaded $n monthly records")
+
+    // ---------- Simple Moving Average (SMA) ----------
+    val windowSize = 3
+
+    def simpleMovingAverage(series: List[Double], window: Int): List[Double] =
+      series.sliding(window).map(w => w.sum / window).toList
+
+    val sma = simpleMovingAverage(passengers, windowSize)
+
+    // ---------- Weighted Moving Average (WMA) ----------
+    def weightedMovingAverage(series: List[Double], window: Int): List[Double] = {
+      val weights = (1 to window).toList
+      val weightSum = weights.sum
+      series.sliding(window).map { w =>
+        w.zip(weights).map { case (v, wt) => v * wt }.sum / weightSum
+      }.toList
+    }
+
+    val wma = weightedMovingAverage(passengers, windowSize)
+
+    // ---------- Exponential Moving Average (EMA) ----------
+    def exponentialMovingAverage(series: List[Double], alpha: Double): List[Double] = {
+      series.foldLeft(List.empty[Double]) { (acc, value) =>
+        acc match {
+          case Nil => List(value)
+          case _ =>
+            val prevEma = acc.last
+            val newEma = alpha * value + (1 - alpha) * prevEma
+            acc :+ newEma
+        }
+      }
+    }
+
+    val alpha = 0.3
+    val ema = exponentialMovingAverage(passengers, alpha)
+
+    // ---------- Print results ----------
+    println("\n--- Simple Moving Average (window=3) ---")
+    println(sma.take(10).map(v => f"$v%.2f").mkString(", "))
+
+    println("\n--- Weighted Moving Average (window=3) ---")
+    println(wma.take(10).map(v => f"$v%.2f").mkString(", "))
+
+    println(s"\n--- Exponential Moving Average (alpha=$alpha) ---")
+    println(ema.take(10).map(v => f"$v%.2f").mkString(", "))
+
+    // ---------- Visualization ----------
+    val fig = Figure("US Airline Passenger Traffic - Moving Averages")
+    fig.width = 1100
+    fig.height = 650
+    val plt = fig.subplot(0)
+
+    plt.title = "Monthly US Airline Passengers with SMA, WMA, EMA (2003-2023)"
+    plt.xlabel = "Month Index"
+    plt.ylabel = "Total Passengers"
+
+    val xOriginal = DenseVector((0 until n).map(_.toDouble).toArray)
+    val yOriginal = DenseVector(passengers.toArray)
+
+    val xSma = DenseVector((windowSize - 1 until n).map(_.toDouble).toArray)
+    val ySma = DenseVector(sma.toArray)
+
+    val xWma = DenseVector((windowSize - 1 until n).map(_.toDouble).toArray)
+    val yWma = DenseVector(wma.toArray)
+
+    val xEma = DenseVector((0 until n).map(_.toDouble).toArray)
+    val yEma = DenseVector(ema.toArray)
+
+    // NOTE: Breeze-viz only supports these color codes: y m c r g b w k
+    // or [R,G,B] values. "gray", "blue" etc. as words are NOT supported.
+    plt += plot(xOriginal, yOriginal, name = "Original", colorcode = "k") // black
+    plt += plot(xSma, ySma, name = "SMA", colorcode = "b")                // blue
+    plt += plot(xWma, yWma, name = "WMA", colorcode = "g")                // green
+    plt += plot(xEma, yEma, name = "EMA", colorcode = "r")                // red
+
+    fig.refresh()
+    fig.saveas("moving_averages_plot.png")
+
+    println("\nPlot saved as moving_averages_plot.png")
+
+    // ---------- Inference ----------
+    println("\n-----------------------------------")
+    println(" Inference ")
+    println("-----------------------------------")
+    println("The US airline passenger data (2003-2023) shows long-term growth with a")
+    println("massive dip around 2020 (COVID-19 pandemic) and clear seasonal patterns")
+    println("(higher travel in summer months).")
+    println("SMA smooths the data evenly but lags behind sudden shocks like the pandemic drop.")
+    println("WMA reacts a bit faster than SMA since recent months are weighted more heavily.")
+    println("EMA reacts fastest to sudden changes since it continuously weights recent")
+    println("data more heavily using the smoothing factor (alpha).")
+    println("-----------------------------------")
+    println("Justification: For this dataset, EMA is the most suitable moving average")
+    println("because it captures sharp real-world shocks (like the COVID-19 crash and")
+    println("recovery) much faster than SMA or WMA, which lag behind due to equal or")
+    println("linear weighting of older values.")
+    println("-----------------------------------")
+  }
+}
