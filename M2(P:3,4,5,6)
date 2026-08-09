@@ -1,0 +1,382 @@
+//3. Write a program to compute frequency distribution and cumulative frequency of a dataset.
+import com.github.tototoshi.csv._
+import java.io.File
+
+object Pract_3_M2_Trisha_S086 {
+
+  def main(args: Array[String]): Unit = {
+
+    val reader = CSVReader.open(new File("winequality.csv"))
+    val data = reader.allWithHeaders()
+    reader.close()
+
+    val alcohol: List[Double] = data.map { row =>
+      row("alcohol").trim.toDouble
+    }
+
+    println(s"Loaded ${alcohol.length} wine records\n")
+
+    val minVal = alcohol.min
+    val maxVal = alcohol.max
+    val numBins = 8
+    val binWidth = (maxVal - minVal) / numBins
+
+    println(f"Minimum Alcohol %% : $minVal%.2f")
+    println(f"Maximum Alcohol %% : $maxVal%.2f")
+    println(f"Bin Width          : $binWidth%.2f\n")
+
+    // Assign each value directly to a bin index (no boundary overlap possible)
+    def binIndexFor(v: Double): Int = {
+      val idx = ((v - minVal) / binWidth).toInt
+      if (idx >= numBins) numBins - 1 else idx // clamp the max value into the last bin
+    }
+
+    val bins: List[(Double, Double)] = (0 until numBins).map { i =>
+      val lower = minVal + i * binWidth
+      val upper = if (i == numBins - 1) maxVal else minVal + (i + 1) * binWidth
+      (lower, upper)
+    }.toList
+
+    val frequencies: Array[Int] = Array.fill(numBins)(0)
+    alcohol.foreach { v =>
+      val idx = binIndexFor(v)
+      frequencies(idx) += 1
+    }
+    val frequenciesList = frequencies.toList
+
+    val cumulativeFrequencies: List[Int] =
+      frequenciesList.scanLeft(0)(_ + _).tail
+
+    println("-----------------------------------------------------------")
+    println(f"${"Class Interval (Alcohol pct)"}%-28s ${"Frequency"}%-12s ${"Cumulative Frequency"}%-10s")
+    println("-----------------------------------------------------------")
+
+    for (i <- bins.indices) {
+      val (lower, upper) = bins(i)
+      val freq = frequenciesList(i)
+      val cumFreq = cumulativeFrequencies(i)
+      println(f"$lower%.2f - $upper%.2f".padTo(28, ' ') +
+        f"$freq%-12d" + f"$cumFreq%-10d")
+    }
+
+    println("-----------------------------------------------------------")
+    println(s"Total Records : ${alcohol.length}")
+    println(s"Total Frequency Sum Check : ${frequenciesList.sum} (should match total records)")
+    println("-----------------------------------------------------------")
+
+    val maxFreqIndex = frequenciesList.indexOf(frequenciesList.max)
+    val (modalLower, modalUpper) = bins(maxFreqIndex)
+
+    println("\n--- Inference ---")
+    println(f"The most frequently occurring alcohol pct range (modal class) is between $modalLower%.2f and $modalUpper%.2f,")
+    println(s"with ${frequenciesList(maxFreqIndex)} wines falling in that range.")
+    println("The cumulative frequency shows how the data accumulates as alcohol content")
+    println("increases, useful for understanding what proportion of wines fall below")
+    println("a certain alcohol percentage.")
+  }
+}
+
+
+//4. Sort a dataset by a specific column and extract the top 5 rows.
+import com.github.tototoshi.csv._
+import java.io.File
+
+object Pract_4_M2_Trisha_S086 {
+
+  def main(args: Array[String]): Unit = {
+
+    // Step 1: Load dataset
+    val reader = CSVReader.open(new File("winequality.csv"))
+    val data = reader.allWithHeaders()
+    reader.close()
+
+    println(s"Loaded ${data.length} wine records\n")
+
+    // Step 2: Sort by "quality" column (descending order)
+    val sortedData = data.sortBy(row => -row("quality").trim.toDouble)
+
+    // Step 3: Extract top 5 rows
+    val top5 = sortedData.take(5)
+
+    // Step 4: Print results
+    println("-----------------------------------------------------------")
+    println(" Top 5 Rows Sorted by Quality (Descending) ")
+    println("-----------------------------------------------------------")
+
+    val headers = top5.head.keys.toList
+    println(headers.mkString(", "))
+    println("-----------------------------------------------------------")
+
+    top5.foreach { row =>
+      println(headers.map(row).mkString(", "))
+    }
+
+    println("-----------------------------------------------------------")
+
+    // Step 5: Simple inference
+    val topQuality = top5.head("quality")
+    println(s"\nThe highest quality score in the dataset is $topQuality.")
+    println("These top 5 rows represent the best-rated wines based on the quality column.")
+  }
+}
+
+
+//5. Implement linear regression using Breeze. Fit a model to a small dataset and predict a value.
+import breeze.linalg.{DenseMatrix, DenseVector}
+import breeze.stats.regression.leastSquares
+import breeze.plot._
+import com.github.tototoshi.csv._
+import java.io.File
+
+object Pract_5_M2_Trisha_S086 {
+
+  def main(args: Array[String]): Unit = {
+
+    // 1. Load dataset
+    val reader = CSVReader.open(new File("salary_data_large.csv"))
+    val data = reader.allWithHeaders()
+    reader.close()
+
+    println(s"Loaded ${data.length} records\n")
+
+    // Feature Engineering: extract YearsExperience (X) and Salary (y), skip invalid rows
+    val validPairs: List[(Double, Double)] = data.flatMap { row =>
+      for {
+        exp <- row.get("YearsExperience").flatMap(_.trim.toDoubleOption)
+        sal <- row.get("Salary").flatMap(_.trim.toDoubleOption)
+      } yield (exp, sal)
+    }
+
+    println(s"Valid records after cleaning: ${validPairs.length}\n")
+
+    val (expList, salList) = validPairs.unzip
+    val x = DenseVector(expList.toArray)
+    val y = DenseVector(salList.toArray)
+
+    println("Sample of original data (first 5 records):")
+    println(s"  Years Experience: ${x(0 until 5)}")
+    println(s"  Salary          : ${y(0 until 5)}")
+
+    // 2. Prepare design matrix with intercept column
+    val ones = DenseVector.ones[Double](x.length)
+    val X = DenseMatrix.horzcat(ones.asDenseMatrix.t, x.asDenseMatrix.t)
+
+    // 3. Fit the linear regression model
+    val coefficients = leastSquares(X, y).coefficients
+
+    val intercept = coefficients(0)
+    val slope = coefficients(1)
+
+    println("\nLinear Regression Coefficients:")
+    println(f"  Intercept (b0) : $intercept%.4f")
+    println(f"  Slope (b1)     : $slope%.4f")
+
+    // 4. Predict salary for a new years-of-experience value
+    val newExperience = 12.0
+    val predictedSalary = intercept + slope * newExperience
+
+    println(f"\nPredicting salary for Years of Experience = $newExperience%.1f:")
+    println(f"  Predicted salary: $predictedSalary%.2f")
+
+    // 5. Calculate R-squared manually
+    val yMean = breeze.stats.mean(y)
+    val predictions = X * coefficients
+    val ssTot = y.toArray.map(v => math.pow(v - yMean, 2)).sum
+    val ssRes = (0 until y.length).map(i => math.pow(y(i) - predictions(i), 2)).sum
+    val rSquared = 1 - (ssRes / ssTot)
+
+    println(f"\nModel R-squared: $rSquared%.4f")
+
+    // 6. Inference
+    println("\n-----------------------------------")
+    println(" Inference ")
+    println("-----------------------------------")
+    println(f"There is a very strong positive relationship: for every additional year")
+    println(f"of experience, salary increases by approximately $slope%.2f units.")
+    println(f"The model explains about ${rSquared * 100}%.2f%% of the variation in salary")
+    println("(R-squared), showing years of experience is an excellent predictor of salary")
+    println("in this dataset - the relationship is very close to perfectly linear.")
+    println("-----------------------------------")
+
+    // 7. Visualization: scatter plot + regression line
+    val fig = Figure("Linear Regression - Years of Experience vs Salary")
+    fig.width = 900
+    fig.height = 600
+    val plt = fig.subplot(0)
+
+    plt.title = "Years of Experience vs Salary with Regression Line"
+    plt.xlabel = "Years of Experience"
+    plt.ylabel = "Salary"
+
+    plt += plot(x, y, '.', name = "Actual Data", colorcode = "b")
+
+    val xLine = DenseVector(x.toArray.min, x.toArray.max)
+    val yLine = xLine.map(v => intercept + slope * v)
+    plt += plot(xLine, yLine, '-', name = "Regression Line", colorcode = "r")
+
+    fig.refresh()
+    fig.saveas("linear_regression_plot.png")
+
+    println("\nPlot saved as linear_regression_plot.png")
+  }
+}
+
+//6. Perform logistic regression using Breeze. Classify a dataset with binary labels.
+import breeze.linalg._
+import breeze.numerics.sigmoid
+import breeze.stats.{mean, stddev, median}
+import breeze.plot._
+import com.github.tototoshi.csv._
+import java.io.File
+
+object Pract_6_M2_Trisha_S086 {
+
+  def main(args: Array[String]): Unit = {
+
+    // 1. Load dataset
+    val reader = CSVReader.open(new File("salary_data_large.csv"))
+    val data = reader.allWithHeaders()
+    reader.close()
+
+    println(s"Loaded ${data.length} records\n")
+
+    // Feature Engineering: extract YearsExperience and Salary
+    val cleaned = data.flatMap { row =>
+      for {
+        exp <- row.get("YearsExperience").flatMap(_.trim.toDoubleOption)
+        sal <- row.get("Salary").flatMap(_.trim.toDoubleOption)
+      } yield (exp, sal)
+    }
+
+    println(s"Valid records after cleaning: ${cleaned.length}\n")
+
+    val numSamples = cleaned.length
+    val numFeatures = 1
+
+    // Create binary label: 1 = "High Earner" (salary >= median), 0 = "Low Earner"
+    val salaryValues = DenseVector(cleaned.map(_._2).toArray)
+    val medianSalary = median(salaryValues)
+
+    println(f"Median Salary (used as classification threshold): $medianSalary%.2f\n")
+
+    val X_train = DenseMatrix.zeros[Double](numSamples, numFeatures)
+    val y_train = DenseVector.zeros[Double](numSamples)
+
+    cleaned.zipWithIndex.foreach { case ((exp, sal), i) =>
+      X_train(i, 0) = exp
+      y_train(i) = if (sal >= medianSalary) 1.0 else 0.0
+    }
+
+    println("Dataset summary:")
+    println(s"  Number of samples  : ${X_train.rows}")
+    println(s"  Number of features : ${X_train.cols}")
+    println(s"  'High Earner' (label=1): ${y_train.toArray.count(_ == 1.0)}")
+    println(s"  'Low Earner' (label=0): ${y_train.toArray.count(_ == 0.0)}\n")
+
+    // 2. Normalize feature (Years of Experience)
+    val expMean = mean(X_train(::, 0))
+    val expStd = stddev(X_train(::, 0))
+
+    val X_norm = DenseMatrix.zeros[Double](numSamples, numFeatures)
+    X_norm(::, 0) := (X_train(::, 0) - expMean) / expStd
+
+    // 3. Add intercept column
+    val X_with_intercept =
+      DenseMatrix.horzcat(DenseMatrix.ones[Double](numSamples, 1), X_norm)
+
+    // 4. Manual Gradient Descent
+    var weights = DenseVector.zeros[Double](numFeatures + 1)
+    val learningRate = 0.1
+    val iterations = 2000
+
+    println("Training the model using gradient descent...")
+
+    for (_ <- 0 until iterations) {
+      val z = X_with_intercept * weights
+      val predictions = sigmoid(z)
+      val error = predictions - y_train
+      val gradient = (X_with_intercept.t * error) / numSamples.toDouble
+      weights = weights - (gradient * learningRate)
+    }
+
+    println("\nTrained model weights (coefficients, on normalized feature):")
+    println(s"  Intercept (w0)             : ${weights(0)}")
+    println(s"  Years of Experience (w1)   : ${weights(1)}")
+
+    // 5. Prediction function
+    def predict(experience: Double): (Double, Int) = {
+      val normExp = (experience - expMean) / expStd
+      val point = DenseVector(1.0, normExp)
+      val z = weights dot point
+      val probability = sigmoid(z)
+      val predictedClass = if (probability >= 0.5) 1 else 0
+      (probability, predictedClass)
+    }
+
+    val (prob1, class1) = predict(3.0)
+    println(s"\nPredicting class for Years of Experience = 3.0:")
+    println(s"  Predicted probability: $prob1")
+    println(s"  Predicted class: $class1 (1 = High Earner, 0 = Low Earner)")
+
+    val (prob2, class2) = predict(15.0)
+    println(s"\nPredicting class for Years of Experience = 15.0:")
+    println(s"  Predicted probability: $prob2")
+    println(s"  Predicted class: $class2 (1 = High Earner, 0 = Low Earner)")
+
+    // 6. Evaluate accuracy on training data
+    val zAll = X_with_intercept * weights
+    val predictedLabels = sigmoid(zAll).toArray.map(p => if (p >= 0.5) 1.0 else 0.0)
+    val correct = predictedLabels.zip(y_train.toArray).count { case (p, actual) => p == actual }
+    val accuracy = correct.toDouble / numSamples
+
+    println(f"\nModel Accuracy on training data: ${accuracy * 100}%.2f%%")
+
+    // 7. Inference
+    println("\n-----------------------------------")
+    println(" Inference ")
+    println("-----------------------------------")
+    println("Logistic regression was used to classify employees as 'High Earner'")
+    println("(salary >= median) or 'Low Earner' (salary < median) based solely on")
+    println("years of experience. Since salary and experience are almost perfectly")
+    println("linearly related in this dataset, the classifier should separate the")
+    println("two classes very cleanly, with high accuracy.")
+    println("-----------------------------------")
+
+    // 8. Visualization: scatter plot (colored by class) + decision boundary
+    val fig = Figure("Logistic Regression - Salary Classification")
+    fig.width = 900
+    fig.height = 600
+    val plt = fig.subplot(0)
+
+    plt.title = "Years of Experience vs Salary (High vs Low Earner)"
+    plt.xlabel = "Years of Experience"
+    plt.ylabel = "Salary"
+
+    val highIdx = (0 until numSamples).filter(i => y_train(i) == 1.0)
+    val lowIdx = (0 until numSamples).filter(i => y_train(i) == 0.0)
+
+    val xHigh = DenseVector(highIdx.map(i => X_train(i, 0)).toArray)
+    val yHigh = DenseVector(highIdx.map(i => cleaned(i)._2).toArray)
+
+    val xLow = DenseVector(lowIdx.map(i => X_train(i, 0)).toArray)
+    val yLow = DenseVector(lowIdx.map(i => cleaned(i)._2).toArray)
+
+    plt += plot(xHigh, yHigh, '.', name = "High Earner", colorcode = "g")
+    plt += plot(xLow, yLow, '.', name = "Low Earner", colorcode = "r")
+
+    // Decision boundary: vertical line at the experience value where probability = 0.5
+    // w0 + w1*normExp = 0  =>  normExp = -w0/w1
+    val boundaryNormExp = -weights(0) / weights(1)
+    val boundaryExp = boundaryNormExp * expStd + expMean
+
+    val yRange = DenseVector(salaryValues.toArray.min, salaryValues.toArray.max)
+    val xBoundary = DenseVector(boundaryExp, boundaryExp)
+
+    plt += plot(xBoundary, yRange, '-', name = "Decision Boundary", colorcode = "k")
+
+    fig.refresh()
+    fig.saveas("logistic_regression_plot.png")
+
+    println("\nPlot saved as logistic_regression_plot.png")
+  }
+}
