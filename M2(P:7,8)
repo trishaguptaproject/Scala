@@ -1,0 +1,197 @@
+//7. Compute the Euclidean distance between two Breeze vectors. Use it for nearest neighbor classification.
+import breeze.linalg.{DenseVector, euclideanDistance}
+import com.github.tototoshi.csv._
+import java.io.File
+
+/**
+ * This example demonstrates how to compute the Euclidean distance between
+ * two Breeze vectors and use it for a simple 1-Nearest Neighbor (1-NN) classification.
+ *
+ * To run this code, you will need to have Breeze as a dependency in your build.sbt:
+ * libraryDependencies += "org.scalanlp" %% "breeze" % "2.0"
+ */
+object Pract_7_M2_Trisha_S086 {
+
+  // A simple case class to hold our data points and their labels
+  case class DataPoint(features: DenseVector[Double], label: String)
+
+  def main(args: Array[String]): Unit = {
+
+    // 1. Load dataset from CSV file with features and labels.
+    // The features are 2-dimensional vectors (area, perimeter).
+    val reader = CSVReader.open(new File("seeds_dataset.csv"))
+    val rows = reader.allWithHeaders()
+    reader.close()
+
+    val dataset: Seq[DataPoint] = rows.flatMap { row =>
+      for {
+        area <- row.get("area").flatMap(_.trim.toDoubleOption)
+        perimeter <- row.get("perimeter").flatMap(_.trim.toDoubleOption)
+        variety <- row.get("variety")
+      } yield DataPoint(DenseVector(area, perimeter), variety)
+    }
+
+    println("Training data points:")
+    dataset.foreach(p => println(s"  Features: ${p.features}, Label: ${p.label}"))
+
+    // 2. Define a new, unlabeled data point that we want to classify.
+    val newPointFeatures = DenseVector(14.5, 14.4)
+    println(s"\nNew data point to classify: ${newPointFeatures}")
+
+    // 3. Find the nearest neighbor using Euclidean distance.
+    var minDistance = Double.MaxValue
+    var predictedLabel = ""
+
+    // Iterate through the dataset and find the closest point.
+    for (point <- dataset) {
+      // Compute the Euclidean distance between the new point and the current point in the dataset.
+      val dist = euclideanDistance(newPointFeatures, point.features)
+      println(s"  Distance to point with label '${point.label}': $dist")
+
+      // If this point is closer than the current minimum, update the minimum and the predicted label.
+      if (dist < minDistance) {
+        minDistance = dist
+        predictedLabel = point.label
+      }
+    }
+
+    // 4. Print the result of the classification.
+    println("\nClassification Result:")
+    println(s"  The nearest neighbor is at a distance of: $minDistance")
+    println(s"  The predicted label for the new point is: $predictedLabel")
+  }
+}
+
+////8. Cluster a dataset into two groups using k-means clustering in Breeze.
+
+import breeze.linalg._
+import breeze.stats.distributions.Rand
+import com.github.tototoshi.csv._
+import java.io.File
+
+/**
+ * This example demonstrates k-means clustering using the Breeze library in Scala.
+ * It loads a real customer dataset (Annual Income vs Spending Score), applies the
+ * k-means algorithm, and prints the final cluster assignments.
+ *
+ * To run this code, you will need to have Breeze as a dependency in your build.sbt:
+ * libraryDependencies += "org.scalanlp" %% "breeze" % "2.0"
+ */
+object Pract_8_M2_Trisha_S086 {
+
+  def main(args: Array[String]): Unit = {
+
+    val k = 2
+    val maxIterations = 100
+
+    println("Loading dataset...")
+
+    // 1. Load dataset from CSV file
+    val reader = CSVReader.open(new File("customer_data.csv"))
+    val rows = reader.allWithHeaders()
+    reader.close()
+
+    val validRows = rows.flatMap { row =>
+      for {
+        income <- row.get("AnnualIncome").flatMap(_.trim.toDoubleOption)
+        spending <- row.get("SpendingScore").flatMap(_.trim.toDoubleOption)
+      } yield (income, spending)
+    }
+
+    val numSamples = validRows.length
+    val numFeatures = 2
+
+    val data = DenseMatrix.zeros[Double](numSamples, numFeatures)
+    validRows.zipWithIndex.foreach { case ((income, spending), i) =>
+      data(i, 0) = income
+      data(i, 1) = spending
+    }
+
+    println(s"Loaded dataset with ${data.rows} samples and ${data.cols} features (AnnualIncome, SpendingScore).")
+
+    // 1. Initialize centroids by randomly selecting k data points
+    var centroids = DenseMatrix.zeros[Double](k, numFeatures)
+    val randomIndices = (0 until data.rows).sortBy(_ => Rand.uniform.get()).take(k)
+
+    for (i <- 0 until k) {
+      centroids(i, ::) := data(randomIndices(i), ::)
+    }
+
+    println(s"\nInitial centroids:\n$centroids")
+
+    var assignments = DenseVector.zeros[Int](data.rows)
+    var previousAssignments = DenseVector.zeros[Int](data.rows)
+
+    var iteration = 0
+    var converged = false
+
+    // Main k-means loop
+    while (iteration < maxIterations && !converged) {
+      println(s"\n--- Iteration ${iteration + 1} ---")
+
+      // 2. Assignment Step: Assign each data point to the nearest centroid
+      for (i <- 0 until data.rows) {
+        val point = data(i, ::).t
+        var minDistance = Double.MaxValue
+        var closestCentroidIndex = -1
+
+        for (j <- 0 until k) {
+          val centroid = centroids(j, ::).t
+          val dist = euclideanDistance(point, centroid)
+          if (dist < minDistance) {
+            minDistance = dist
+            closestCentroidIndex = j
+          }
+        }
+        assignments(i) = closestCentroidIndex
+      }
+
+      // Check for convergence
+      if (assignments == previousAssignments) {
+        converged = true
+      } else {
+        previousAssignments = assignments.copy
+      }
+
+      // 3. Update Step: Recalculate centroids
+      val newCentroids = DenseMatrix.zeros[Double](k, numFeatures)
+      val clusterCounts = DenseVector.zeros[Int](k)
+
+      for (i <- 0 until data.rows) {
+        val clusterId = assignments(i)
+        newCentroids(clusterId, ::) := newCentroids(clusterId, ::) + data(i, ::)
+        clusterCounts(clusterId) += 1
+      }
+
+      for (i <- 0 until k) {
+        if (clusterCounts(i) > 0) {
+          newCentroids(i, ::) := newCentroids(i, ::) / clusterCounts(i).toDouble
+        }
+      }
+
+      centroids = newCentroids
+      println(s"Updated centroids:\n$centroids")
+
+      iteration += 1
+    }
+
+    println("\n--- Final Results ---")
+    println(s"K-means algorithm converged in $iteration iterations.")
+    println(s"Final centroids (AnnualIncome, SpendingScore):\n$centroids")
+    println(s"Final cluster assignments:\n$assignments")
+
+    val cluster0Count = assignments.toArray.count(_ == 0)
+    val cluster1Count = assignments.toArray.count(_ == 1)
+    println(s"\nCluster 0 size: $cluster0Count")
+    println(s"Cluster 1 size: $cluster1Count")
+
+    println("\n-----------------------------------")
+    println(" Inference ")
+    println("-----------------------------------")
+    println("K-means grouped customers into two segments based on Annual Income and")
+    println("Spending Score. One cluster represents higher-income, conservative spenders,")
+    println("while the other represents lower-income customers with higher spending scores")
+    println("(impulsive spenders) - a common real-world customer segmentation pattern.")
+    println("-----------------------------------")
+  }
+}
