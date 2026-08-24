@@ -1,0 +1,103 @@
+//11. Perform a group-by operation in Spark DataFrames to compute the average of each group.
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import avg
+
+# Create Spark session
+spark = SparkSession.builder \
+    .appName("GroupByAverage") \
+    .master("local[*]") \
+    .getOrCreate()
+
+# Read the CSV file
+df = spark.read.csv(
+    "students.csv",
+    header=True,
+    inferSchema=True
+)
+
+# Display the original data
+print("Original Data:")
+df.show()
+
+# Group by Department and calculate average marks
+result = df.groupBy("Department").agg(
+    avg("Marks").alias("Average_Marks")
+)
+
+# Display the result
+print("Average Marks by Department:")
+result.show()
+
+# Stop Spark
+spark.stop()
+
+//12. Join two CSV files in Spark DataFrames based on a common column and write the output to a file.
+import os
+import csv
+
+# Configure Hadoop for Windows
+os.environ["HADOOP_HOME"] = r"C:\hadoop"
+os.environ["hadoop.home.dir"] = r"C:\hadoop"
+
+from pyspark.sql import SparkSession
+
+# Create Spark session
+spark = SparkSession.builder \
+    .appName("JoinCSVFiles") \
+    .master("local[*]") \
+    .getOrCreate()
+
+# Read students.csv
+students_df = spark.read.csv(
+    "students.csv",
+    header=True,
+    inferSchema=True
+)
+
+# Read student_details.csv
+details_df = spark.read.csv(
+    "student_details.csv",
+    header=True,
+    inferSchema=True
+)
+
+# Display Students Data
+print("Students Data:")
+students_df.show()
+
+# Display Student Details
+print("Student Details:")
+details_df.show()
+
+# Join both DataFrames using Name
+joined_df = students_df.join(
+    details_df,
+    on="Name",
+    how="inner"
+)
+
+# Display Joined Data
+print("Joined Data:")
+joined_df.show()
+
+# Convert joined DataFrame to rows
+rows = joined_df.collect()
+
+# Create output CSV file
+output_file = "joined_output.csv"
+
+with open(output_file, "w", newline="", encoding="utf-8") as file:
+    writer = csv.writer(file)
+
+    # Write column names
+    writer.writerow(joined_df.columns)
+
+    # Write data
+    for row in rows:
+        writer.writerow(row)
+
+print("Joined data has been written to:")
+print(output_file)
+
+# Stop Spark
+spark.stop()
