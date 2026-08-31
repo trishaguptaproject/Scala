@@ -1,0 +1,277 @@
+from pyspark.sql import SparkSession
+from pyspark.ml import Pipeline
+from pyspark.ml.feature import (
+    StringIndexer,
+    OneHotEncoder,
+    VectorAssembler,
+    IndexToString
+)
+from pyspark.ml.classification import LogisticRegression
+from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+
+
+# STEP 1: CREATE SPARK SESSION
+
+
+spark = SparkSession.builder \
+    .appName("Student Result Classification") \
+    .getOrCreate()
+
+spark.sparkContext.setLogLevel("WARN")
+
+
+# STEP 2: LOAD DATASET
+
+
+df = spark.read.csv(
+    "students_result.csv",
+    header=True,
+    inferSchema=True
+)
+
+print("\n================ ORIGINAL DATASET ================\n")
+df.show(50, truncate=False)
+
+print("\n================ DATASET SCHEMA ================\n")
+df.printSchema()
+
+
+# STEP 3: CHECK DATASET
+
+
+print("\n================ DATASET COUNT ================\n")
+print("Total Students:", df.count())
+
+print("\n================ DEPARTMENT COUNT ================\n")
+df.groupBy("Department").count().show()
+
+print("\n================ RESULT COUNT ================\n")
+df.groupBy("Result").count().show()
+
+
+# STEP 4: CONVERT RESULT INTO NUMERICAL LABEL
+
+
+label_indexer = StringIndexer(
+    inputCol="Result",
+    outputCol="label",
+    stringOrderType="alphabetAsc"
+)
+
+# STEP 5: CONVERT DEPARTMENT INTO NUMERICAL VALUE
+
+
+department_indexer = StringIndexer(
+    inputCol="Department",
+    outputCol="department_index",
+    stringOrderType="alphabetAsc"
+)
+
+
+# STEP 6: ONE-HOT ENCODE DEPARTMENT
+
+department_encoder = OneHotEncoder(
+    inputCol="department_index",
+    outputCol="department_vector"
+)
+
+# STEP 7: CREATE FEATURES
+
+# We DO NOT use Name because a student's name should not
+# influence whether the student passes or fails.
+
+assembler = VectorAssembler(
+    inputCols=[
+        "Marks",
+        "Attendance",
+        "department_vector"
+    ],
+    outputCol="features"
+)
+
+
+# STEP 8: CREATE LOGISTIC REGRESSION MODEL
+
+lr = LogisticRegression(
+    featuresCol="features",
+    labelCol="label",
+    maxIter=50
+)
+
+
+# STEP 9: CREATE PIPELINE
+
+pipeline = Pipeline(
+    stages=[
+        label_indexer,
+        department_indexer,
+        department_encoder,
+        assembler,
+        lr
+    ]
+)
+
+
+# STEP 10: SPLIT DATA INTO TRAINING AND TESTING
+
+train_data, test_data = df.randomSplit(
+    [0.8, 0.2],
+    seed=42
+)
+
+print("\n================ TRAINING DATA ================\n")
+print("Training records:", train_data.count())
+train_data.show(truncate=False)
+
+print("\n================ TEST DATA ================\n")
+print("Testing records:", test_data.count())
+test_data.show(truncate=False)
+
+
+# STEP 11: TRAIN THE MODEL
+print("\n================ TRAINING MODEL ================\n")
+
+model = pipeline.fit(train_data)
+
+print("Model training completed successfully.")
+
+
+
+# STEP 12: MAKE PREDICTIONS
+
+predictions = model.transform(test_data)
+
+# STEP 13: CONVERT NUMERICAL PREDICTION BACK TO PASS/FAIL
+
+prediction_converter = IndexToString(
+    inputCol="prediction",
+    outputCol="PredictedResult",
+    labels=["Fail", "Pass"]
+)
+
+predictions = prediction_converter.transform(predictions)
+
+
+# STEP 14: DISPLAY PREDICTIONS
+
+
+print("\n================ PREDICTIONS ================\n")
+
+predictions.select(
+    "Name",
+    "Department",
+    "Marks",
+    "Attendance",
+    "Result",
+    "PredictedResult"
+).orderBy("Name").show(
+    50,
+    truncate=False
+)
+
+
+# STEP 15: DISPLAY NUMERICAL PREDICTIONS
+
+
+print("\n================ NUMERICAL PREDICTIONS ================\n")
+
+predictions.select(
+    "Name",
+    "label",
+    "prediction"
+).show(
+    50,
+    truncate=False
+)
+
+
+# STEP 16: CALCULATE ACCURACY
+
+
+accuracy_evaluator = MulticlassClassificationEvaluator(
+    labelCol="label",
+    predictionCol="prediction",
+    metricName="accuracy"
+)
+
+accuracy = accuracy_evaluator.evaluate(predictions)
+
+# STEP 17: CALCULATE PRECISION
+
+
+precision_evaluator = MulticlassClassificationEvaluator(
+    labelCol="label",
+    predictionCol="prediction",
+    metricName="weightedPrecision"
+)
+
+precision = precision_evaluator.evaluate(predictions)
+
+# STEP 18: CALCULATE RECALL
+
+
+recall_evaluator = MulticlassClassificationEvaluator(
+    labelCol="label",
+    predictionCol="prediction",
+    metricName="weightedRecall"
+)
+
+recall = recall_evaluator.evaluate(predictions)
+
+
+# STEP 19: CALCULATE F1 SCORE
+
+
+f1_evaluator = MulticlassClassificationEvaluator(
+    labelCol="label",
+    predictionCol="prediction",
+    metricName="f1"
+)
+
+f1 = f1_evaluator.evaluate(predictions)
+
+# STEP 20: DISPLAY EVALUATION RESULTS
+
+
+print("\n================ MODEL EVALUATION ================\n")
+
+print(f"Accuracy  : {accuracy:.2f}")
+print(f"Precision : {precision:.2f}")
+print(f"Recall    : {recall:.2f}")
+print(f"F1 Score  : {f1:.2f}")
+
+
+# STEP 21: CONFUSION MATRIX
+
+
+print("\n================ CONFUSION MATRIX ================\n")
+
+predictions.groupBy(
+    "label",
+    "prediction"
+).count().orderBy(
+    "label",
+    "prediction"
+).show()
+
+
+# STEP 22: DISPLAY MODEL COEFFICIENTS
+
+# The last stage of the pipeline is Logistic Regression
+lr_model = model.stages[-1]
+
+print("\n================ LOGISTIC REGRESSION MODEL ================\n")
+
+print("Coefficients:")
+print(lr_model.coefficients)
+
+print("\nIntercept:")
+print(lr_model.intercept)
+
+# STEP 23: STOP SPARK
+
+
+spark.stop()
+
+print("\n================ PROGRAM COMPLETED ================\n")
+print("Student Result Classification completed successfully.")
